@@ -1,0 +1,21 @@
+# ─── Python ──────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# ─── Lokalne dane użytkownika (nie commitować) ───
+chats.json
+notebooks.json
+chroma_db/
+uploads/
+
+# ─── IDE / OS ────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ─── Logi ────────────────────────────────────
+*.log
