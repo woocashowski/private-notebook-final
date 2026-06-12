@@ -234,8 +234,18 @@ async def chat(req: ChatRequest):
 
     model = req.model or (conv["model"] if conv else None)
 
-    hits = await rag.retrieve(req.query, k=req.k, notebook_id=notebook_id)
-    messages = rag.build_prompt_with_history(req.query, hits, history)
+    # Short follow-ups ("a ile wynosi kara?") embed poorly on their own;
+    # prepend the previous user question so retrieval keeps the topic.
+    retrieval_query = req.query
+    if history and len(req.query.strip()) < 60:
+        prev_user = next(
+            (m.get("content", "") for m in reversed(history) if m.get("role") == "user"), ""
+        )
+        if prev_user:
+            retrieval_query = f"{prev_user}\n{req.query}"
+
+    hits = await rag.retrieve(retrieval_query, k=req.k, notebook_id=notebook_id)
+    messages = rag.build_prompt_with_history(req.query, hits, history, model=model)
 
     async def event_stream():
         sources = [
@@ -243,6 +253,7 @@ async def chat(req: ChatRequest):
                 "n": i + 1,
                 "filename": h["metadata"]["filename"],
                 "chunk_index": h["metadata"]["chunk_index"],
+                "page": h["metadata"].get("page"),
                 "preview": h["text"][:240],
                 "distance": h["distance"],
             }

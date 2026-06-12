@@ -45,6 +45,15 @@ async def embeddings(req: Request):
     return {"embedding": fake_embed(body.get("prompt", ""))}
 
 
+@app.post("/api/embed")
+async def embed_batch(req: Request):
+    body = await req.json()
+    inputs = body.get("input", [])
+    if isinstance(inputs, str):
+        inputs = [inputs]
+    return {"embeddings": [fake_embed(t) for t in inputs]}
+
+
 @app.post("/api/chat")
 async def chat(req: Request):
     body = await req.json()

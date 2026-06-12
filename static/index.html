@@ -1054,7 +1054,7 @@ function renderSourcesIn(el,sources){
     const card=document.createElement("div"); card.className="source"; card.setAttribute("data-n",s.n);
     card.innerHTML=`<div class="n">${s.n}</div>
       <div class="content">
-        <div class="file">${escapeHtml(s.filename)} · fragment ${s.chunk_index}</div>
+        <div class="file">${escapeHtml(s.filename)}${s.page?` · str. ${s.page}`:""} · fragment ${s.chunk_index}</div>
         <div class="relevance-track"><div class="relevance-bar"></div></div>
         <div class="relevance-label">dopasowanie ${pct}%</div>
         <div class="preview">${escapeHtml(s.preview)}</div>
