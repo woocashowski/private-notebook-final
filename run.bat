@@ -33,7 +33,7 @@ if errorlevel 1 (
 )
 
 echo -^> starting server on http://localhost:8000
-uvicorn server:app --port 8000 --reload
+uvicorn src.server:app --port 8000 --reload
 goto :eof
 
 :error

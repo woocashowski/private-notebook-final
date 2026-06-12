@@ -13,6 +13,10 @@ from pathlib import Path
 import httpx
 
 # --- Nuke any old index before importing rag -------------------------------
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).parent))  # allow `import rag/server` from src/
+
 import shutil
 shutil.rmtree("chroma_db", ignore_errors=True)
 

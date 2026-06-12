@@ -27,4 +27,4 @@ if ! curl -s http://localhost:11434/api/tags > /dev/null; then
 fi
 
 echo "→ starting server on http://localhost:8000"
-uvicorn server:app --port 8000 --reload
+uvicorn src.server:app --port 8000 --reload

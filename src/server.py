@@ -23,7 +23,7 @@ FastAPI server. Endpoints:
   POST   /api/chat                   -> stream answer, persist turn (SSE)
 
 Run:
-  uvicorn server:app --reload --port 8000
+  uvicorn src.server:app --reload --port 8000
 """
 from __future__ import annotations
 
@@ -37,12 +37,12 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-import rag
-from parsers import parse_file, PARSERS
+from . import rag
+from .parsers import parse_file, PARSERS
 
 app = FastAPI(title="Offline RAG")
 
-STATIC_DIR = Path(__file__).parent / "static"
+STATIC_DIR = Path(__file__).parent.parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
