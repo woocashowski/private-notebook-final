@@ -228,36 +228,74 @@ async def embed(texts: list[str]) -> list[list[float]]:
     return out
 
 
+def _bielik_raw_prompt(messages: list[dict]) -> str:
+    """
+    Convert a messages list to Mistral [INST] format.
+    Bielik GGUF models were trained on this format, but Ollama assigns them a
+    Command R template — a mismatch that causes the model to echo its input.
+    We bypass the template entirely via /api/generate with raw=True.
+    """
+    parts = ["<s>"]
+    for msg in messages:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role == "user":
+            parts.append(f"[INST] {content} [/INST]")
+        elif role == "assistant":
+            parts.append(f"{content}</s>")
+    return "".join(parts)
+
+
 async def chat_stream(messages: list[dict], model: str | None = None) -> AsyncIterator[str]:
     """Stream chat tokens from Ollama using the given model (defaults to LLM_MODEL)."""
     target_model = model or LLM_MODEL
-    
+
     if "hf.co/" in target_model:
         target_model = target_model.lower()
+
+    is_bielik = "bielik" in target_model.lower()
+
+    options: dict = {
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "repeat_penalty": 1.15,
+        "num_ctx": 8192,
+    }
+
     async with httpx.AsyncClient(timeout=None) as client:
-        async with client.stream(
-            "POST",
-            f"{OLLAMA_URL}/api/chat",  
-            json={
+        if is_bielik:
+            # Use /api/generate with raw=True and explicit [INST] prompt to
+            # bypass the mismatched Command R template Ollama assigns to Bielik.
+            options["stop"] = ["[INST]", "</s>"]
+            request_body = {
+                "model": target_model,
+                "prompt": _bielik_raw_prompt(messages),
+                "stream": True,
+                "raw": True,
+                "options": options,
+                "keep_alive": KEEP_ALIVE,
+            }
+            content_key = "response"
+            endpoint = f"{OLLAMA_URL}/api/generate"
+        else:
+            request_body = {
                 "model": target_model,
                 "messages": messages,
                 "stream": True,
                 # Greedy decoding (temperature 0) makes quantized 7B models
                 # (especially Bielik Q2_K) fall into repetition loops.
-                "options": {
-                    "temperature": 0.2,
-                    "top_p": 0.9,
-                    "repeat_penalty": 1.15,
-                    "num_ctx": 8192,
-                },
+                "options": options,
                 "keep_alive": KEEP_ALIVE,
-            },
-        ) as r:
+            }
+            content_key = None  # use message.content path
+            endpoint = f"{OLLAMA_URL}/api/chat"
+
+        async with client.stream("POST", endpoint, json=request_body) as r:
             r.raise_for_status()
             async for line in r.aiter_lines():
-                if not line.strip(): 
+                if not line.strip():
                     continue
-                
+
                 try:
                     data = json.loads(line)
                 except json.JSONDecodeError:
@@ -266,7 +304,11 @@ async def chat_stream(messages: list[dict], model: str | None = None) -> AsyncIt
                 if data.get("error"):
                     raise RuntimeError(data["error"])
 
-                chunk = data.get("message", {}).get("content", "")
+                chunk = (
+                    data.get(content_key, "")
+                    if content_key
+                    else data.get("message", {}).get("content", "")
+                )
                 if chunk:
                     yield chunk
 
@@ -459,11 +501,12 @@ async def retrieve(query: str, k: int = 5, notebook_id: str | None = None) -> li
     return hits + kw_hits[:3]
 
 
-def _merge_system_into_user(model: str | None) -> bool:
+def _skip_system_role(model: str | None) -> bool:
     """
-    Some GGUF chat templates (notably Bielik pulled via hf.co/...) ignore the
-    `system` role entirely — the model then never sees instructions nor RAG
-    context. For those models we send everything in a single user message.
+    Bielik GGUF models via Ollama use the Command R chat template, but the model
+    was trained on Mistral/Llama [INST] format, so Command R tokens are ignored.
+    This causes the system content to be echoed back as the response.
+    For these models, omit the system message and rely on their law fine-tuning.
     """
     return "bielik" in (model or LLM_MODEL).lower()
 
@@ -507,8 +550,14 @@ def build_prompt(query: str, hits: list[dict], model: str | None = None) -> list
         )
         user = f"Materiały:\n\n{context}\n\nPytanie: {query.strip()}"
 
-    if _merge_system_into_user(model):
-        return [{"role": "user", "content": f"{system}\n\n{user}"}]
+    if _skip_system_role(model):
+        if not hits:
+            # A bare query with no context causes Bielik to generate template
+            # tokens immediately. A short inline instruction anchors its response.
+            bielik_user = f"Odpowiedz krótko i rzeczowo po polsku.\n\nPytanie: {query.strip()}"
+        else:
+            bielik_user = user  # Materiały + Pytanie structure is sufficient
+        return [{"role": "user", "content": bielik_user}]
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
